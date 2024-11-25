@@ -1,4 +1,9 @@
 import { useState, useEffect } from "react";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../../firebase";
+
+const osfToken = import.meta.env.VITE_OSF_ACCESS_TOKEN;
+const userPassword = import.meta.env.VITE_FIREBASE_USER_PASSWORD;
 
 interface FileData {
   id: string;
@@ -22,13 +27,41 @@ interface Folder {
       };
     };
   };
-
   attributes: {
     name: string;
   };
+  links: {
+    download: string;
+  };
 }
 
-const osfToken = import.meta.env.VITE_OSF_ACCESS_TOKEN;
+interface Pages {
+  data: {
+    id: string;
+    attributes: {
+      name: string;
+    };
+  }[];
+  links: {
+    self: string;
+    first: string;
+    last: string;
+    prev: string;
+    next: string;
+  };
+}
+
+// Log in with email and password
+const email = "taiveyonshaw@gmail.com";
+const password = userPassword;
+signInWithEmailAndPassword(auth, email, password)
+  .then((userCredential) => {
+    // Signed in successfully, you can access userCredential
+    console.log("User logged in:", userCredential.user);
+  })
+  .catch((error) => {
+    console.error("Error logging in:", error);
+  });
 
 const FileFetcher = () => {
   const [files, setFiles] = useState<FileData[]>([]);
@@ -37,14 +70,16 @@ const FileFetcher = () => {
 
   const fetchFileData = async () => {
     try {
-      const endpoint = "nodes/xnr9f/files/osfstorage/";
-      const response = await fetch(`https://api.osf.io/v2/${endpoint}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${osfToken}`,
-          "Content-Type": "application/json",
-        },
-      });
+      const response = await fetch(
+        `https://api.osf.io/v2/nodes/xnr9f/files/osfstorage/`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${osfToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`Error: ${response.status} - ${response.statusText}`);
@@ -53,27 +88,30 @@ const FileFetcher = () => {
       const data = await response.json();
 
       const fileDataPromises = data.data.map(async (file: Folder) => {
-        const fileName = file.attributes.name;
-        console.log(fileName);
-        const fileUrl = file.relationships.files.links.related.href;
-        const fileDetailResponse = await fetch(fileUrl, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${osfToken}`,
-            "Content-Type": "application/json",
-          },
-        });
+        let fileUrl = file.relationships.files.links.related.href;
+        const fileArray: string[] = [];
 
-        if (!fileDetailResponse.ok) {
-          throw new Error(
-            `Error fetching file details: ${fileDetailResponse.status} - ${fileDetailResponse.statusText}`
-          );
+        while (fileUrl != null) {
+          const fileDetailResponse = await fetch(fileUrl, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${osfToken}`,
+              "Content-Type": "application/json",
+            },
+          });
+          if (!fileDetailResponse.ok) {
+            throw new Error(
+              `Error fetching file details: ${fileDetailResponse.status} - ${fileDetailResponse.statusText}`
+            );
+          }
+          const fileDetail: Pages = await fileDetailResponse.json();
+          fileUrl = fileDetail.links.next;
+          fileDetail.data.map((id) => {
+            fileArray.push(id.attributes.name);
+          });
         }
-
-        const fileDetail = await fileDetailResponse.json();
-        return {
-          fileDetail,
-        };
+        console.log(fileArray);
+        return { id: fileArray };
       });
 
       const allFileDetails = await Promise.all(fileDataPromises);
@@ -92,13 +130,14 @@ const FileFetcher = () => {
   if (loading) return <div>Loading...</div>;
   if (error) return <div>Error fetching file data: {error}</div>;
 
-  console.log(files[0].fileDetail.data[0].id);
   return (
     <div>
       <h1>File Data</h1>
-      {files.map((file) => (
-        <li>{file.fileDetail.data[0].attributes.name}</li>
-      ))}
+      {/* <ul>
+        {files.map((file) => (
+          <li key={file.id}>{file.id}</li> // Added optional chaining
+        ))}
+      </ul> */}
     </div>
   );
 };
