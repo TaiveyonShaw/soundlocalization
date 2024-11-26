@@ -67,6 +67,7 @@ const FileFetcher = () => {
   const [files, setFiles] = useState<FileData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null); // State for the selected file
 
   const fetchFileData = async () => {
     try {
@@ -110,7 +111,6 @@ const FileFetcher = () => {
             fileArray.push(id.attributes.name);
           });
         }
-        console.log(fileArray);
         return { id: fileArray };
       });
 
@@ -127,17 +127,42 @@ const FileFetcher = () => {
     fetchFileData();
   }, []);
 
+  // Handle selection change
+  const handleDropdownChange = (
+    event: React.ChangeEvent<HTMLSelectElement>
+  ) => {
+    setSelectedFile(event.target.value); // Store the selected file
+    console.log("Selected File:", event.target.value);
+  };
+
   if (loading) return <div>Loading...</div>;
   if (error) return <div>Error fetching file data: {error}</div>;
 
   return (
     <div>
       <h1>File Data</h1>
-      {/* <ul>
-        {files.map((file) => (
-          <li key={file.id}>{file.id}</li> // Added optional chaining
-        ))}
-      </ul> */}
+      <label htmlFor="fileDropdown">Choose a file:</label>
+      <select
+        id="fileDropdown"
+        value={selectedFile || ""}
+        onChange={handleDropdownChange}
+      >
+        <option value="" disabled>
+          Select a file
+        </option>
+        {/* Populate the dropdown with file names */}
+        {files.flatMap((fileData) =>
+          fileData.id.map((fileName, index) => (
+            <option key={index} value={fileName}>
+              {fileName}
+            </option>
+          ))
+        )}
+      </select>
+      <div>
+        {/* Display the selected file */}
+        {selectedFile && <p>You selected: {selectedFile}</p>}
+      </div>
     </div>
   );
 };

@@ -20,7 +20,7 @@ const FileUpload = () => {
 
     setUploading(true);
     setError(null);
-    const fileRef = ref(storage, `uploads/${file.name}`);
+    const fileRef = ref(storage, `Opn_thestruct/${file.name}`);
 
     try {
       // Upload file to Firebase Storage
