@@ -1,80 +1,23 @@
 import { useState, useEffect } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../../firebase";
+import { FileData, Folder, Pages } from "../../types/osf";
+import { useFirebaseAuth } from "../../hooks/useFirebaseAuth";
+import { processMatFile } from "./processMatFile.js";
 
 const osfToken = import.meta.env.VITE_OSF_ACCESS_TOKEN;
-const userPassword = import.meta.env.VITE_FIREBASE_USER_PASSWORD;
-
-interface FileData {
-  id: string;
-  fileDetail: {
-    data: {
-      id: string;
-      attributes: {
-        name: string;
-      };
-    }[];
-  };
-}
-
-interface Folder {
-  relationships: {
-    files: {
-      links: {
-        related: {
-          href: string;
-        };
-      };
-    };
-  };
-  attributes: {
-    name: string;
-  };
-  links: {
-    download: string;
-  };
-}
-
-interface Pages {
-  data: {
-    id: string;
-    attributes: {
-      name: string;
-    };
-  }[];
-  links: {
-    self: string;
-    first: string;
-    last: string;
-    prev: string;
-    next: string;
-  };
-}
-
-// Log in with email and password
-const email = "taiveyonshaw@gmail.com";
-const password = userPassword;
-signInWithEmailAndPassword(auth, email, password)
-  .then((userCredential) => {
-    // Signed in successfully, you can access userCredential
-    console.log("User logged in:", userCredential.user);
-  })
-  .catch((error) => {
-    console.error("Error logging in:", error);
-  });
 
 const FileFetcher = () => {
   const [files, setFiles] = useState<FileData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null); // State for the selected file
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  
+  const { user, error: authError } = useFirebaseAuth();
 
   const fetchFileData = async () => {
     try {
       const response = await fetch(
-        `https://api.osf.io/v2/nodes/xnr9f/files/osfstorage/`,
+        "https://api.osf.io/v2/nodes/xnr9f/files/osfstorage/",
         {
-          method: "GET",
           headers: {
             Authorization: `Bearer ${osfToken}`,
             "Content-Type": "application/json",
@@ -87,30 +30,16 @@ const FileFetcher = () => {
       }
 
       const data = await response.json();
-
       const fileDataPromises = data.data.map(async (file: Folder) => {
-        let fileUrl = file.relationships.files.links.related.href;
         const fileArray: string[] = [];
+        let fileUrl = file.relationships.files.links.related.href;
 
-        while (fileUrl != null) {
-          const fileDetailResponse = await fetch(fileUrl, {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${osfToken}`,
-              "Content-Type": "application/json",
-            },
-          });
-          if (!fileDetailResponse.ok) {
-            throw new Error(
-              `Error fetching file details: ${fileDetailResponse.status} - ${fileDetailResponse.statusText}`
-            );
-          }
-          const fileDetail: Pages = await fileDetailResponse.json();
+        while (fileUrl) {
+          const fileDetail: Pages = await fetchFileDetails(fileUrl);
           fileUrl = fileDetail.links.next;
-          fileDetail.data.map((id) => {
-            fileArray.push(id.attributes.name);
-          });
+          fileDetail.data.forEach(id => fileArray.push(id.attributes.name));
         }
+        
         return { id: fileArray };
       });
 
@@ -123,20 +52,57 @@ const FileFetcher = () => {
     }
   };
 
+  const fetchFileDetails = async (url: string): Promise<Pages> => {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${osfToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(
+        `Error fetching file details: ${response.status} - ${response.statusText}`
+      );
+    }
+    
+    return response.json();
+  };
+
+  const handleDropdownChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedValue = event.target.value;
+    setSelectedFile(selectedValue);
+    console.log("Selected File:", selectedValue);
+    
+    try {
+      const response = await fetch(
+        `https://api.osf.io/v2/files/${selectedValue}/download/`,
+        {
+          headers: {
+            Authorization: `Bearer ${osfToken}`,
+          },
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.status}`);
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      const result = await processMatFile(arrayBuffer);
+      console.log('Processed MAT file:', result);
+    } catch (error) {
+      console.error('Error processing file:', error);
+      setError((error as Error).message);
+    }
+  };
+
   useEffect(() => {
     fetchFileData();
   }, []);
 
-  // Handle selection change
-  const handleDropdownChange = (
-    event: React.ChangeEvent<HTMLSelectElement>
-  ) => {
-    setSelectedFile(event.target.value); // Store the selected file
-    console.log("Selected File:", event.target.value);
-  };
-
   if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error fetching file data: {error}</div>;
+  if (error || authError) return <div>Error: {error || authError}</div>;
 
   return (
     <div>
@@ -150,19 +116,15 @@ const FileFetcher = () => {
         <option value="" disabled>
           Select a file
         </option>
-        {/* Populate the dropdown with file names */}
-        {files.flatMap((fileData) =>
+        {files.flatMap((fileData, fileIndex) =>
           fileData.id.map((fileName, index) => (
-            <option key={index} value={fileName}>
+            <option key={`${fileIndex}-${index}`} value={fileName}>
               {fileName}
             </option>
           ))
         )}
       </select>
-      <div>
-        {/* Display the selected file */}
-        {selectedFile && <p>You selected: {selectedFile}</p>}
-      </div>
+      {selectedFile && <p>You selected: {selectedFile}</p>}
     </div>
   );
 };
